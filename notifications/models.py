@@ -14,7 +14,7 @@ class Notification(models.Model):
     title = models.CharField(max_length=200)
     body = models.TextField(blank=True, null=True)
     type = models.CharField(max_length=50)  # exam_result | payment | certificate | system
-    link_url = models.URLField(blank=True, null=True)
+    
     is_read = models.BooleanField(default=False)
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
