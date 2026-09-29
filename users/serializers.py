@@ -389,7 +389,6 @@ class ProfileUpdateSerializer(serializers.Serializer):
     profilePicture = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
-    # NO bio field
 
     def update(self, instance, validated_data):
         mapping = {
@@ -404,14 +403,22 @@ class ProfileUpdateSerializer(serializers.Serializer):
             if key in validated_data:
                 setattr(instance, model_field, validated_data[key] or None)
 
-        pic = validated_data.get("profilePicture")
-        if pic:
-            mime, _ = validate_base64_payload(pic, "Profile picture")
-            if not mime.startswith("image/"):
-                raise serializers.ValidationError(
-                    {"profilePicture": "Must be an image"}
-                )
-            instance.profile_picture_base64 = pic
+        # profilePicture:
+        #   - key present, value is a base64 data URL  → set the picture
+        #   - key present, value is None or ""         → remove the picture
+        #   - key absent                               → leave unchanged
+        if "profilePicture" in validated_data:
+            pic = validated_data["profilePicture"]
+
+            if pic is None or pic == "":
+                instance.profile_picture_base64 = None
+            else:
+                mime, _ = validate_base64_payload(pic, "Profile picture")
+                if not mime.startswith("image/"):
+                    raise serializers.ValidationError(
+                        {"profilePicture": "Must be an image"}
+                    )
+                instance.profile_picture_base64 = pic
 
         instance.save()
         return instance

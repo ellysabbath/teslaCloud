@@ -582,6 +582,19 @@ class PublishAttemptView(APIView):
             update_fields=["status", "published_at", "updated_at"]
         )
 
+        # ---------- Auto-issue certificate (>= 60%) ----------
+        try:
+            from certificates.services import (
+                issue_certificate_for_attempt,
+            )
+            issue_certificate_for_attempt(attempt)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "Certificate auto-issue failed for attempt %s",
+                attempt.id,
+            )
+
         return Response(
             {
                 "success": True,
@@ -589,7 +602,6 @@ class PublishAttemptView(APIView):
                 "data": ExamAttemptSerializer(attempt).data,
             }
         )
-
 
 # ============================================================
 # GET /api/attempts/<attempt_id>/review/

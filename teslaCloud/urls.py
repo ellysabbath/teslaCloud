@@ -24,6 +24,7 @@ urlpatterns = [
     path("api/exams/", include("exams.urls")),
     path("api/attempts/", include("attempts.urls")),
     path("api/exams/", include("questions.urls")),
+    path("api/certificates/", include("certificates.urls")),
 
     # ============================================================
     # JWT refresh — lives under /api/auth/ so the frontend
