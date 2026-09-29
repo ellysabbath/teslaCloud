@@ -1,3 +1,5 @@
+# questions/serializers.py
+
 from rest_framework import serializers
 
 from .models import (
@@ -12,7 +14,7 @@ from .models import (
 
 
 # ============================================================
-# READ serializer — used when loading an exam
+# READ — used when loading an exam
 # ============================================================
 class QuestionOptionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -74,25 +76,45 @@ class QuestionSerializer(serializers.ModelSerializer):
             return None
 
     def get_correct_matches(self, obj):
-        scheme = obj.matching_scheme.all()
-        return {str(row.column_a_id): str(row.column_b_id) for row in scheme}
+        """
+        Return the correct matching scheme as ``{ "aIndex": "bIndex" }``.
+
+        The source of truth is ``Question.correct_matches`` — a JSONField
+        written by ``SectionQuestionsBulkView`` when the admin saves.
+        If for some reason the JSONField is empty (legacy data), fall
+        back to the old ``MatchingScheme`` table and convert the UUIDs
+        to indices so the frontend always sees the same shape.
+        """
+        stored = dict(obj.correct_matches or {})
+        if stored:
+            return {str(k): str(v) for k, v in stored.items()}
+
+        # Legacy fallback — read MatchingScheme rows and convert to indices.
+        a_rows = list(obj.matching_column_a.all().order_by("sort_order"))
+        b_rows = list(obj.matching_column_b.all().order_by("sort_order"))
+        a_index = {str(r.id): i for i, r in enumerate(a_rows)}
+        b_index = {str(r.id): i for i, r in enumerate(b_rows)}
+
+        out = {}
+        for row in obj.matching_scheme.all():
+            a_idx = a_index.get(str(row.column_a_id))
+            b_idx = b_index.get(str(row.column_b_id))
+            if a_idx is not None and b_idx is not None:
+                out[str(a_idx)] = str(b_idx)
+        return out
 
 
 # ============================================================
-# WRITE serializer — accepts the frontend's payload
+# WRITE — accepts the frontend's payload
 # ============================================================
 class QuestionWriteSerializer(serializers.Serializer):
     """
     One item per question, matching the frontend ExamQuestion shape:
 
-    - multiple-choice:
-        { type: 'multiple-choice', text, options: [..], correctOptionIndex: 0 }
-    - true-false:
-        { type: 'true-false', text, correctBoolean: true }
-    - matching:
-        { type: 'matching', text, columnA:[{id,text}], columnB:[{id,text}], correctMatches:{aId:bId} }
-    - fill-blank:
-        { type: 'fill-blank', text, correctText, acceptAlternatives: [] }
+    - multiple-choice: { type, text, options, correctOptionIndex }
+    - true-false:      { type, text, correctBoolean }
+    - matching:        { type, text, columnA, columnB, correctMatches }
+    - fill-blank:      { type, text, correctText, acceptAlternatives }
     """
     type = serializers.CharField()
     text = serializers.CharField(allow_blank=True, required=False)

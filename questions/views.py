@@ -1,3 +1,5 @@
+# questions/views.py
+
 from django.db import transaction
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -20,7 +22,6 @@ from .serializers import QuestionSerializer, QuestionWriteSerializer
 
 # ============================================================
 # GET /api/exams/sections/<section_id>/questions/
-# Returns every question in a section (with nested options, columns, etc.).
 # ============================================================
 class SectionQuestionsListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -52,7 +53,7 @@ class SectionQuestionsListView(APIView):
 
 
 # ============================================================
-# POST /api/exams/sections/<section_id>/questions/
+# POST /api/exams/sections/<section_id>/questions/save/
 # Replaces all questions in a section.
 # ============================================================
 class SectionQuestionsBulkView(APIView):
@@ -128,33 +129,56 @@ class SectionQuestionsBulkView(APIView):
                 colB_raw = q.get("columnB") or []
                 matches = q.get("correctMatches") or {}
 
-                a_id_map = {}
+                # Build Column A rows, remember UUID -> index.
+                a_index_by_uuid = {}
                 for ai, a in enumerate(colA_raw):
-                    a_obj = MatchingColumnA.objects.create(
+                    text = a.get("text") if isinstance(a, dict) else str(a)
+                    MatchingColumnA.objects.create(
                         question=question,
-                        item_text=a.get("text") or "",
+                        item_text=text or "",
                         sort_order=ai,
                     )
-                    a_id_map[str(a.get("id"))] = a_obj
+                    client_id = (
+                        a.get("id") if isinstance(a, dict) else None
+                    )
+                    if client_id:
+                        a_index_by_uuid[str(client_id)] = ai
 
-                b_id_map = {}
+                # Build Column B rows, remember UUID -> index.
+                b_index_by_uuid = {}
                 for bi, b in enumerate(colB_raw):
-                    b_obj = MatchingColumnB.objects.create(
+                    text = b.get("text") if isinstance(b, dict) else str(b)
+                    MatchingColumnB.objects.create(
                         question=question,
-                        item_text=b.get("text") or "",
+                        item_text=text or "",
                         sort_order=bi,
                     )
-                    b_id_map[str(b.get("id"))] = b_obj
+                    client_id = (
+                        b.get("id") if isinstance(b, dict) else None
+                    )
+                    if client_id:
+                        b_index_by_uuid[str(client_id)] = bi
 
+                # Convert correctMatches to index → index strings.
+                # The frontend may send either UUID keys or index keys.
+                idx_matches = {}
                 for a_key, b_key in matches.items():
-                    a_obj = a_id_map.get(str(a_key))
-                    b_obj = b_id_map.get(str(b_key))
-                    if a_obj and b_obj:
-                        MatchingScheme.objects.create(
-                            question=question,
-                            column_a=a_obj,
-                            column_b=b_obj,
-                        )
+                    a_str = str(a_key)
+                    b_str = str(b_key)
+
+                    if a_str.isdigit() and b_str.isdigit():
+                        idx_matches[a_str] = b_str
+                        continue
+
+                    a_idx = a_index_by_uuid.get(a_str)
+                    b_idx = b_index_by_uuid.get(b_str)
+                    if a_idx is not None and b_idx is not None:
+                        idx_matches[str(a_idx)] = str(b_idx)
+
+                # Persist on Question.correct_matches — the source of
+                # truth that _auto_mark reads.
+                question.correct_matches = idx_matches
+                question.save(update_fields=["correct_matches"])
 
             # ---------- Fill-in-the-blank ----------
             elif qtype == "fill-blank":

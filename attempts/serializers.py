@@ -1,6 +1,10 @@
+# attempts/serializers.py
+
 from rest_framework import serializers
 
-from questions.models import Question, QuestionOption
+from questions.serializers import QuestionSerializer
+from exams.models import ExamSection
+
 from .models import (
     ExamAttempt,
     AttemptAnswer,
@@ -41,19 +45,17 @@ class AttemptAnswerSerializer(serializers.ModelSerializer):
 
 
 class AttemptMatchingAnswerSerializer(serializers.ModelSerializer):
+    """Matching answers are exposed by index, not by UUID."""
+
     questionId = serializers.UUIDField(source="question_id", read_only=True)
-    columnAId = serializers.UUIDField(source="column_a_id", read_only=True)
-    columnBId = serializers.UUIDField(
-        source="column_b_id", read_only=True, allow_null=True
-    )
 
     class Meta:
         model = AttemptMatchingAnswer
         fields = [
             "id",
             "questionId",
-            "columnAId",
-            "columnBId",
+            "a_index",
+            "b_index",
             "is_correct",
         ]
 
@@ -75,27 +77,43 @@ class ExamAttemptSerializer(serializers.ModelSerializer):
     durationMinutes = serializers.IntegerField(
         source="exam.duration_minutes", read_only=True
     )
-
-    sessionVideo = serializers.SerializerMethodField()   # ← NEW
+    sessionVideo = serializers.SerializerMethodField()
 
     class Meta:
         model = ExamAttempt
         fields = [
-            "id", "examId", "examTitle", "courseId", "courseTitle",
-            "studentName", "studentUsername",
-            "started_at", "submitted_at", "auto_submitted",
-            "auto_submit_reason", "durationMinutes",
-            "theory_earned", "theory_total", "theory_percent",
-            "practical_score", "practical_max", "practical_percent",
-            "final_percent", "final_grade", "passed", "status",
-            "marked_at", "published_at",
-            "sessionVideo",                              # ← NEW
+            "id",
+            "examId",
+            "examTitle",
+            "courseId",
+            "courseTitle",
+            "studentName",
+            "studentUsername",
+            "started_at",
+            "submitted_at",
+            "auto_submitted",
+            "auto_submit_reason",
+            "durationMinutes",
+            "theory_earned",
+            "theory_total",
+            "theory_percent",
+            "practical_score",
+            "practical_max",
+            "practical_percent",
+            "final_percent",
+            "final_grade",
+            "passed",
+            "status",
+            "marked_at",
+            "published_at",
+            "sessionVideo",
         ]
 
     def get_sessionVideo(self, obj):
         if obj.session_video and obj.session_video.data:
             return obj.session_video.data
         return None
+
 
 # ============================================================
 # Detail — includes answers + marking
@@ -127,7 +145,8 @@ class SubmitAnswerSerializer(serializers.Serializer):
     textAnswer = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
-    matches = serializers.DictField(required=False)  # columnAId -> columnBId
+    # { aIndex: bIndex } — both as strings
+    matches = serializers.DictField(required=False)
 
 
 class SubmitAttemptSerializer(serializers.Serializer):
@@ -144,18 +163,7 @@ class SubmitAttemptSerializer(serializers.Serializer):
 # ============================================================
 # REVIEW — full detail for the admin review modal
 # ============================================================
-from questions.serializers import QuestionSerializer   # add at top of file
-from exams.models import ExamSection, Exam
-
-
 class AdminAttemptReviewSerializer(serializers.ModelSerializer):
-    """
-    Returns everything the admin needs to review one attempt:
-      - attempt metadata
-      - the student's submitted answers
-      - the full exam structure (sections + questions + correct answers)
-      - the auto-marking results
-    """
     examId = serializers.UUIDField(source="exam_id", read_only=True)
     examTitle = serializers.CharField(source="exam.title", read_only=True)
     courseId = serializers.UUIDField(source="exam.course_id", read_only=True)
@@ -171,13 +179,15 @@ class AdminAttemptReviewSerializer(serializers.ModelSerializer):
     )
     sessionVideo = serializers.SerializerMethodField()
 
-    # Full exam structure for the reviewer
     exam = serializers.SerializerMethodField()
 
-    # Student's answers
     answers = AttemptAnswerSerializer(many=True, read_only=True)
-    matching_answers = AttemptMatchingAnswerSerializer(many=True, read_only=True)
-    marking_results = AttemptMarkingResultSerializer(many=True, read_only=True)
+    matching_answers = AttemptMatchingAnswerSerializer(
+        many=True, read_only=True
+    )
+    marking_results = AttemptMarkingResultSerializer(
+        many=True, read_only=True
+    )
 
     class Meta:
         model = ExamAttempt
@@ -219,11 +229,6 @@ class AdminAttemptReviewSerializer(serializers.ModelSerializer):
         return None
 
     def get_exam(self, obj):
-        """
-        Return the full exam structure — sections, questions,
-        correct answers, and everything else the admin needs
-        to grade a submission by hand if required.
-        """
         exam = obj.exam
         sections = (
             ExamSection.objects
@@ -233,7 +238,6 @@ class AdminAttemptReviewSerializer(serializers.ModelSerializer):
                 "questions__options",
                 "questions__matching_column_a",
                 "questions__matching_column_b",
-                "questions__matching_scheme",
                 "questions__fill_blank_answers",
             )
             .order_by("sort_order")
