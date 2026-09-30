@@ -50,3 +50,26 @@ class UserPrivacySettingsSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["updated_at"]
+
+
+
+# notifications/serializers.py (append)
+
+from .models import News
+
+
+class NewsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = [
+            "id",
+            "title",
+            "body",
+            "category",
+            "is_published",
+            "pinned",
+            "author_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "author_name"]

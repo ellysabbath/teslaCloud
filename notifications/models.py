@@ -4,6 +4,7 @@ from django.db import models
 import uuid
 from django.conf import settings
 from django.db import models
+from core.models import TimeStampedModel
 
 
 class Notification(models.Model):
@@ -65,3 +66,43 @@ class UserPrivacySettings(models.Model):
 
     class Meta:
         db_table = "user_privacy_settings"
+
+
+# notifications/models.py (append)
+
+class News(TimeStampedModel):
+    class Category(models.TextChoices):
+        COURSE = "course", "Course"
+        EXAM = "exam", "Exam"
+        PAYMENT = "payment", "Payment"
+        SYSTEM = "system", "System"
+        GENERAL = "general", "General"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True, null=True)
+    category = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        default=Category.GENERAL,
+    )
+    is_published = models.BooleanField(default=True, db_index=True)
+    pinned = models.BooleanField(default=False)
+    author_name = models.CharField(max_length=150, blank=True, null=True)
+
+    class Meta:
+        db_table = "notifications_news"
+        ordering = ["-pinned", "-created_at"]
+        indexes = [
+            models.Index(
+                fields=["is_published"],
+                name="idx_notifnews_pub",
+            ),
+            models.Index(
+                fields=["-created_at"],
+                name="idx_notifnews_created",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.category})"
